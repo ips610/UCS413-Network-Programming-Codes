@@ -1,21 +1,26 @@
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <netdb.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <string.h>
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <pthread.h>
 
+#define PORT 22000
+#define BUF_SIZE 100
+
 void *receive_messages(void *sockfd_ptr) {
     int sockfd = *(int *)sockfd_ptr;
-    char recvline[100];
-    
+    struct sockaddr_in servaddr;
+    socklen_t serv_len = sizeof(servaddr);
+    char recvline[BUF_SIZE];
+
     while(1) {
-        bzero(recvline, 100);
-        int n = recv(sockfd, recvline, 100, 0);
+        bzero(recvline, BUF_SIZE);
+        int n = recvfrom(sockfd, recvline, BUF_SIZE, 0, (struct sockaddr *) &servaddr, &serv_len);
         if(n <= 0) {
-            printf("Server disconnected or error occurred\n");
+            printf("Error occurred or server disconnected\n");
             break;
         }
         printf("Server: %s", recvline);
@@ -25,10 +30,11 @@ void *receive_messages(void *sockfd_ptr) {
 
 int main(int argc, char **argv) {
     int sockfd;
-    char sendline[100];
     struct sockaddr_in servaddr;
+    pthread_t recv_thread;
+    char sendline[BUF_SIZE];
 
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
     if (sockfd < 0) {
         perror("Socket creation failed");
         return 1;
@@ -36,21 +42,15 @@ int main(int argc, char **argv) {
 
     bzero(&servaddr, sizeof(servaddr));
     servaddr.sin_family = AF_INET;
-    servaddr.sin_port = htons(22000);
+    servaddr.sin_port = htons(PORT);
     servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
 
-    if (connect(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
-        perror("Connection failed");
-        return 1;
-    }
-
-    pthread_t recv_thread;
     pthread_create(&recv_thread, NULL, receive_messages, &sockfd);
 
     while(1) {
-        bzero(sendline, 100);
-        fgets(sendline, 100, stdin);
-        if (send(sockfd, sendline, strlen(sendline), 0) < 0) {
+        bzero(sendline, BUF_SIZE);
+        fgets(sendline, BUF_SIZE, stdin);
+        if (sendto(sockfd, sendline, strlen(sendline), 0, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0) {
             perror("Send failed");
             break;
         }

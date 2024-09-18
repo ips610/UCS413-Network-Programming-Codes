@@ -1,63 +1,61 @@
-/*Required Headers*/
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netdb.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
+#include <arpa/inet.h>
 
-// <sys/types.h> - system data types 
-// <sys/socket.h> - internet protocol family -- socket() to create the sockets
-// <netdb.h> - hostnet structure - official name of host and to access the db if it is stored
-// <stdio.h> - basic input - output 
-// <unistd.h> - fork(), close() system calls
-// <string.h> - string
+int main() {
+    int sockfd;
+    struct sockaddr_in servaddr, cliaddr;
+    char buffer[100];
+    socklen_t len;
+    ssize_t n;
 
+    // Create UDP socket
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        perror("socket creation failed");
+        return 1;
+    }
 
-int main()
-{
-	char str[100];
-	int listen_fd, comm_fd; // to handle the foriegn fd - comm_fd
-	// fd - file descriptor
-	// fd[0] - input stream
-	// fd[1] - ouptut stream
-	// fd[2] - error stream
-	// fd[3] - socket descriptyer - socket number is retrned when socket is created -- generally the value is 3
-	
-	struct sockaddr_in servaddr; // structure 
-	listen_fd = socket(AF_INET, SOCK_STREAM, 0);
-	
-	// Zero (0) IS Default else IPPROTO_TCP, IPPROTO_UDP etc etc
-	
-	// Connection Type -> 1. Connectionless -> SOCK_DGRAM (2) -> UDP Protocol 2. Connetion -> SOCK_STREAM (1) -> TCP Protocol
-	
-	// AF_INET - to identify IP Protocol -> IPV4 --- 2 
-	// AF_INET6 - IPV6 --- 10
-	// listen_fd = 3 generally
-	bzero( &servaddr, sizeof(servaddr));
-	
-	// bzero will fill all the zeros in the structure variable
-	
-	servaddr.sin_family = AF_INET;
-	servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-	// htonl - host to network long - 
-	// ntoh - router to host
-	// INADDR_ANY - will accept data from any interface -> address: 0.0.0.0
-	// aprart from this we can specify any ip address also to accept the data from that address only
-	servaddr.sin_port = htons(22000);
-	// htons - host to network short
-	bind(listen_fd, (struct sockaddr *) &servaddr, sizeof(servaddr));
-	listen(listen_fd, 10);
-	// here 10 means that atleast 10 clients can connect with the server at the same type
-	while(1)
-		{
-		
-		comm_fd = accept(listen_fd, (struct sockaddr*) NULL, NULL);
-		bzero( str, 100);
-		recv(comm_fd,str,100,0);
-		printf("Echoing back - %s",str);
-		send(comm_fd,str,strlen(str),0);
-		close(comm_fd);
+    bzero(&servaddr, sizeof(servaddr));
+    bzero(&cliaddr, sizeof(cliaddr));
 
-	}
+    // Fill server information
+    servaddr.sin_family = AF_INET;                // IPv4
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY); // Bind to any local address
+    servaddr.sin_port = htons(22000);             // Port number
+
+    // Bind the socket with the server address
+    if (bind(sockfd, (struct sockaddr *)&servaddr, sizeof(servaddr)) < 0) {
+        perror("bind failed");
+        close(sockfd);
+        return 1;
+    }
+
+    // Server loop
+    while (1) {
+        len = sizeof(cliaddr); // Length of client address
+        bzero(buffer, sizeof(buffer));
+
+        // Receive message from client
+        n = recvfrom(sockfd, buffer, sizeof(buffer), 0, (struct sockaddr *)&cliaddr, &len);
+        if (n < 0) {
+            perror("recvfrom failed");
+            continue;
+        }
+
+        printf("Client: %s", buffer);
+
+        // Echo back the message to the client
+        n = sendto(sockfd, buffer, n, 0, (struct sockaddr *)&cliaddr, len);
+        if (n < 0) {
+            perror("sendto failed");
+        }
+    }
+
+    close(sockfd);
+    return 0;
 }

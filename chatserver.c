@@ -1,21 +1,26 @@
 #include <sys/types.h>
 #include <sys/socket.h>
-#include <netdb.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <string.h>
-#include <unistd.h>
 #include <arpa/inet.h>
+#include <unistd.h>
 #include <pthread.h>
 
-void *receive_messages(void *comm_fd_ptr) {
-    int comm_fd = *(int *)comm_fd_ptr;
-    char recvline[100];
-    
+#define PORT 22000
+#define BUF_SIZE 100
+
+void *receive_messages(void *sockfd_ptr) {
+    int sockfd = *(int *)sockfd_ptr;
+    struct sockaddr_in clientaddr;
+    socklen_t client_len = sizeof(clientaddr);
+    char recvline[BUF_SIZE];
+
     while(1) {
-        bzero(recvline, 100);
-        int n = recv(comm_fd, recvline, 100, 0);
+        bzero(recvline, BUF_SIZE);
+        int n = recvfrom(sockfd, recvline, BUF_SIZE, 0, (struct sockaddr *) &clientaddr, &client_len);
         if(n <= 0) {
-            printf("Client disconnected or error occurred\n");
+            printf("Error occurred or client disconnected\n");
             break;
         }
         printf("Client: %s", recvline);
@@ -24,45 +29,40 @@ void *receive_messages(void *comm_fd_ptr) {
 }
 
 int main() {
-    char sendline[100];
-    int listen_fd, comm_fd;
-    struct sockaddr_in servaddr, clientaddr;
-    socklen_t client_len;
+    int sockfd;
+    struct sockaddr_in servaddr;
+    pthread_t recv_thread;
+    char sendline[BUF_SIZE];
+    struct sockaddr_in clientaddr;
+    socklen_t client_len = sizeof(clientaddr);
 
-    listen_fd = socket(AF_INET, SOCK_STREAM, 0);
-    bzero(&servaddr, sizeof(servaddr));
-
-    servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    servaddr.sin_port = htons(22000);
-
-    bind(listen_fd, (struct sockaddr *) &servaddr, sizeof(servaddr));
-    listen(listen_fd, 10);
-
-    while(1) {
-        client_len = sizeof(clientaddr);
-        comm_fd = accept(listen_fd, (struct sockaddr*) &clientaddr, &client_len);
-
-        // Print the client's IP address
-        char client_ip[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, &clientaddr.sin_addr, client_ip, INET_ADDRSTRLEN);
-        printf("Connected to client IP: %s\n", client_ip);
-
-        pthread_t recv_thread;
-        pthread_create(&recv_thread, NULL, receive_messages, &comm_fd);
-
-        while(1) {
-            bzero(sendline, 100);
-            fgets(sendline, 100, stdin);
-            if (send(comm_fd, sendline, strlen(sendline), 0) < 0) {
-                perror("Send failed");
-                break;
-            }
-        }
-
-        close(comm_fd);
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        perror("Socket creation failed");
+        return 1;
     }
 
-    close(listen_fd);
+    bzero(&servaddr, sizeof(servaddr));
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    servaddr.sin_port = htons(PORT);
+
+    if (bind(sockfd, (struct sockaddr *) &servaddr, sizeof(servaddr)) < 0) {
+        perror("Bind failed");
+        return 1;
+    }
+
+    pthread_create(&recv_thread, NULL, receive_messages, &sockfd);
+
+    while(1) {
+        bzero(sendline, BUF_SIZE);
+        fgets(sendline, BUF_SIZE, stdin);
+        if (sendto(sockfd, sendline, strlen(sendline), 0, (struct sockaddr *) &clientaddr, client_len) < 0) {
+            perror("Send failed");
+            break;
+        }
+    }
+
+    close(sockfd);
     return 0;
 }

@@ -3,31 +3,58 @@
 #include <netdb.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include <arpa/inet.h>
 
-// arpa/inet.h -> inet_addr or type conversion or system calls
-int main(int argc,char **argv)
-{
-	int sockfd,n;
-	char sendline[100];
-	char recvline[100];
-	struct sockaddr_in servaddr;
-	sockfd=socket(AF_INET,SOCK_STREAM,0);
-	bzero(&servaddr,sizeof servaddr);
-	servaddr.sin_family=AF_INET;
-	servaddr.sin_port=htons(22000);
-	servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
-	inet_pton(AF_INET,"127.0.0.1",&(servaddr.sin_addr));
-	connect(sockfd,(struct sockaddr *)&servaddr,sizeof(servaddr));
-	while(1)
-		{
-		bzero( sendline, 100);
-		bzero( recvline, 100);
-		fgets(sendline,100,stdin); /*stdin = 0 , for standard input */
+int main() {
+    int sockfd;
+    struct sockaddr_in servaddr;
+    char sendline[100];
+    char recvline[100];
+    socklen_t len;
 
-		send(sockfd,sendline,strlen(sendline),0);
+    // Create UDP socket
+    sockfd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (sockfd < 0) {
+        perror("socket creation failed");
+        return 1;
+    }
 
-		recv(sockfd,recvline,100,0);
-		printf("%s",recvline);
-	}
+    bzero(&servaddr, sizeof(servaddr));
+
+    // Fill server information
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_port = htons(22000);
+    servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+    len = sizeof(servaddr);
+
+    // Client loop
+    while (1) {
+        bzero(sendline, sizeof(sendline));
+        bzero(recvline, sizeof(recvline));
+
+        // Get input from user
+        printf("Enter message: ");
+        fgets(sendline, sizeof(sendline), stdin);
+
+        // Send message to server
+        ssize_t n = sendto(sockfd, sendline, strlen(sendline), 0, (struct sockaddr *)&servaddr, len);
+        if (n < 0) {
+            perror("sendto failed");
+            continue;
+        }
+
+        // Receive echoed message from server
+        n = recvfrom(sockfd, recvline, sizeof(recvline), 0, NULL, NULL);
+        if (n < 0) {
+            perror("recvfrom failed");
+            continue;
+        }
+
+        printf("Echo from server: %s", recvline);
+    }
+
+    close(sockfd);
+    return 0;
 }
